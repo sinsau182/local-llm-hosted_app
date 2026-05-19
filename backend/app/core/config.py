@@ -6,9 +6,9 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     api_prefix: str = "/api/v1"
 
-    jwt_private_key: str = "replace_with_private_key"
-    jwt_public_key: str = "replace_with_public_key"
-    jwt_algorithm: str = "RS256"
+    jwt_private_key: str = "c77c5664716d90f82b5df8c54625e23e7c44cd5d1fe4b367bc07ac9651647dc1"
+    jwt_public_key: str = "unused"
+    jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
     refresh_token_days: int = 7
 

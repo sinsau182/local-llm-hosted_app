@@ -21,3 +21,66 @@ export type QueueResponse = {
   active_ollama_workers: number;
   active_comfyui_workers: number;
 };
+
+export type UserProfileResponse = {
+  user_id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  storage_quota_bytes: number;
+  storage_used_bytes: number;
+};
+
+export type ModelInfo = {
+  name: string;
+  precision: string;
+  vram_gb: number;
+};
+
+export type ModelsResponse = {
+  models: ModelInfo[];
+};
+
+export type ChatRequest = {
+  prompt: string;
+  model?: string;
+  max_tokens?: number;
+};
+
+export type ChatResponse = {
+  request_id: string;
+  output: string;
+};
+
+export type MediaRequest = {
+  prompt: string;
+  media_type: "image" | "video";
+  model: string;
+};
+
+export type MediaSubmitResponse = {
+  job_id: string;
+  status: string;
+};
+
+export type JobStatusResponse = {
+  job_id: string;
+  status: string;
+};
+
+export type Artifact = {
+  id: string;
+  media_type: string;
+  file_path: string;
+  size_bytes: number;
+};
+
+export type ArtifactListResponse = {
+  items: Artifact[];
+};
+
+export type QuotaResponse = {
+  storage_quota_bytes: number;
+  storage_used_bytes: number;
+  storage_available_bytes: number;
+};

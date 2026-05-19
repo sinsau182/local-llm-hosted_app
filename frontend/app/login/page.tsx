@@ -9,14 +9,23 @@ import { useSessionStore } from "@/lib/store/session";
 export default function LoginPage() {
   const router = useRouter();
   const setTokens = useSessionStore((state) => state.setTokens);
+  const setProfile = useSessionStore((state) => state.setProfile);
   const [email, setEmail] = useState("user@example.com");
   const [password, setPassword] = useState("password");
+  const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const response = await apiClient.login({ email, password });
-    setTokens(response.access_token, response.refresh_token);
-    router.push("/dashboard");
+    setError(null);
+
+    try {
+      const response = await apiClient.login({ email, password });
+      setTokens(response.access_token, response.refresh_token);
+      setProfile({ email });
+      router.push("/dashboard");
+    } catch {
+      setError("Login failed. Check the backend is running with CORS enabled and valid JWT settings.");
+    }
   }
 
   return (
@@ -40,6 +49,7 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </label>
+        {error ? <p className="rounded-xl border border-ember/30 bg-ember/10 px-3 py-2 text-sm text-ink">{error}</p> : null}
         <button className="w-full rounded-xl bg-ink px-4 py-2 text-sand" type="submit">
           Continue
         </button>
