@@ -1,0 +1,78 @@
+version: "3.9"
+
+services:
+  caddy:
+    image: caddy:2.8
+    ports:
+      - "${CADDY_PORT:-443}:443"
+      - "80:80"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - frontend
+      - api
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ./backend/.env
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./data/media:/data/media
+    depends_on:
+      - postgres
+      - redis
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: ["python", "-m", "app.workers.media_worker"]
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./data/media:/data/media
+    depends_on:
+      - postgres
+      - redis
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-platform}
+      - POSTGRES_USER=${POSTGRES_USER:-platform_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-platform_password}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./infra/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+
+  redis:
+    image: redis:7.2-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+
+  comfyui:
+    image: python:3.12-slim
+    command: ["sh", "-c", "echo 'ComfyUI placeholder container'; tail -f /dev/null"]
+
+volumes:
+  pg_data:

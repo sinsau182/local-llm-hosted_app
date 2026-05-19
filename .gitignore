@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+backend/.env
+frontend/.env.local
+
+# IDE and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime data
+data/
+logs/
+.tmp_docx/
+Modified_System_Architecture_version-2.0.zip
+architecture_extracted.txt
