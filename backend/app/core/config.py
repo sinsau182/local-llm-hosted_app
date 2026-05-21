@@ -6,6 +6,9 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     api_prefix: str = "/api/v1"
 
+    ollama_url: str = "http://ollama-placeholder:11434"
+    ollama_timeout_seconds: float = 30.0
+
     jwt_private_key: str = "c77c5664716d90f82b5df8c54625e23e7c44cd5d1fe4b367bc07ac9651647dc1"
     jwt_public_key: str = "unused"
     jwt_algorithm: str = "HS256"
