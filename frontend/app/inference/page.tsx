@@ -9,20 +9,40 @@ export default function InferencePage() {
   const [models, setModels] = useState<Array<{ name: string; precision: string; vram_gb: number }>>([]);
   const [prompt, setPrompt] = useState("Describe the latest uploaded image in a concise product brief.");
   const [chatOutput, setChatOutput] = useState<string>("");
+  const [isChatLoading, setIsChatLoading] = useState(false);
   const [jobId, setJobId] = useState("");
   const [jobStatus, setJobStatus] = useState("");
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [mediaPrompt, setMediaPrompt] = useState("Generate a cinematic product hero image with teal lighting.");
-  const [model, setModel] = useState("qwen2.5-coder:14b");
+  const [model, setModel] = useState("");
   const [mediaJob, setMediaJob] = useState("");
 
   useEffect(() => {
     void apiClient.getModels().then((response) => setModels(response.models));
   }, []);
 
+  useEffect(() => {
+    if (models.length === 0) {
+      return;
+    }
+
+    setModel((currentModel) => {
+      if (models.some((entry) => entry.name === currentModel)) {
+        return currentModel;
+      }
+
+      return models[0].name;
+    });
+  }, [models]);
+
   async function submitChat() {
-    const response = await apiClient.chat({ prompt, model, max_tokens: 256 });
-    setChatOutput(response.output);
+    setIsChatLoading(true);
+    try {
+      const response = await apiClient.chat({ prompt, model, max_tokens: 256 });
+      setChatOutput(response.output);
+    } finally {
+      setIsChatLoading(false);
+    }
   }
 
   async function submitMedia() {
@@ -55,10 +75,31 @@ export default function InferencePage() {
             </label>
             <label className="block text-sm">
               <span className="mb-1 block text-ink/70">Model</span>
-              <input className="w-full rounded-xl border border-ink/20 px-3 py-2" value={model} onChange={(event) => setModel(event.target.value)} />
+              <select
+                className="w-full rounded-xl border border-ink/20 px-3 py-2"
+                value={model}
+                disabled={models.length === 0}
+                onChange={(event) => setModel(event.target.value)}
+              >
+                {models.length === 0 ? (
+                  <option value="">Loading models...</option>
+                ) : (
+                  models.map((entry) => (
+                    <option key={entry.name} value={entry.name}>
+                      {entry.name}
+                    </option>
+                  ))
+                )}
+              </select>
             </label>
-            <Button type="button" onClick={() => void submitChat()}>Run chat</Button>
-            {chatOutput ? <p className="rounded-2xl border border-ink/10 bg-sand/60 p-4 text-sm text-ink/80">{chatOutput}</p> : null}
+            <Button type="button" disabled={isChatLoading} onClick={() => void submitChat()}>
+              {isChatLoading ? "Generating..." : "Run chat"}
+            </Button>
+            {isChatLoading ? (
+              <p className="rounded-2xl border border-ink/10 bg-sand/60 p-4 text-sm text-ink/70">Generating response from the model...</p>
+            ) : chatOutput ? (
+              <p className="rounded-2xl border border-ink/10 bg-sand/60 p-4 text-sm text-ink/80">{chatOutput}</p>
+            ) : null}
           </div>
         </article>
 
