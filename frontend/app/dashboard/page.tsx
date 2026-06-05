@@ -9,19 +9,19 @@ import Link from "next/link";
 const endpointGroups = [
   {
     title: "Auth",
-    endpoints: ["POST /api/v1/auth/login", "POST /api/v1/auth/refresh", "GET /api/v1/auth/me"],
+    endpoints: ["POST /backend/v1/auth/login", "POST /backend/v1/auth/refresh", "GET /backend/v1/auth/me"],
   },
   {
     title: "Inference",
-    endpoints: ["POST /api/v1/inference/chat", "POST /api/v1/inference/media", "GET /api/v1/inference/jobs/{id}", "GET /api/v1/inference/models"],
+    endpoints: ["POST /backend/v1/inference/chat", "POST /backend/v1/inference/media", "GET /backend/v1/inference/jobs/{id}", "GET /backend/v1/inference/models"],
   },
   {
     title: "Storage",
-    endpoints: ["GET /api/v1/storage/quota", "GET /api/v1/storage/files", "DELETE /api/v1/storage/files/{id}"],
+    endpoints: ["GET /backend/v1/storage/quota", "GET /backend/v1/storage/files", "DELETE /backend/v1/storage/files/{id}"],
   },
   {
     title: "System",
-    endpoints: ["GET /api/v1/sys/vram", "GET /api/v1/sys/queue"],
+    endpoints: ["GET /backend/v1/sys/vram", "GET /backend/v1/sys/queue"],
   },
 ];
 

@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from app.schemas.inference import (
     ChatRequest,
     ChatResponse,
+    EmbedRequest,
+    EmbedResponse,
     JobStatusResponse,
     MediaRequest,
     MediaSubmitResponse,
@@ -33,3 +35,8 @@ async def get_job(job_id: str) -> JobStatusResponse:
 @router.get("/models", response_model=ModelsResponse)
 async def models() -> ModelsResponse:
     return service.list_models()
+
+
+@router.post("/embed", response_model=EmbedResponse)
+async def embed(payload: EmbedRequest) -> EmbedResponse:
+    return service.embed(payload)

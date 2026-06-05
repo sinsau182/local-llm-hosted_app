@@ -1,84 +1,65 @@
 version: "3.9"
 
 services:
-  caddy:
-    image: caddy:2.8
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: platform-api
+    restart: unless-stopped
     ports:
-      - "${CADDY_PORT:-443}:443"
-      - "80:80"
+      - "8000:8000"
+    environment:
+      - LLAMA_URL=http://host.docker.internal:4000
+      - LLAMA_TIMEOUT_SECONDS=30
+      - LITELLM_API_KEY=sk-f4fe27901e83c3ebf669625d9b291d27dc4908b2a671bb91f3bdda42e905d2b3
+      - CHROMADB_HOST=host.docker.internal
+      - CHROMADB_PORT=8010
+      - DATABASE_URL=postgresql+psycopg://platform_user:platform_password@postgres:5432/platform
+      - REDIS_URL=redis://redis:6379/0
+      - MEDIA_ROOT=/data/media
+    extra_hosts:
+      - "host.docker.internal:172.17.1.1"
     volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/media:/data/media
     depends_on:
-      - frontend
-      - api
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://api:8000
+    container_name: platform-frontend
+    restart: unless-stopped
     ports:
-      - "${WEB_PORT:-3000}:3000"
+      - "3000:3000"
     depends_on:
       - api
 
-  api:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    environment:
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_TIMEOUT_SECONDS=30
-    env_file:
-      - ./backend/.env
-    ports:
-      - "${API_PORT:-8000}:8000"
-    volumes:
-      - ./data/media:/data/media
-    depends_on:
-      - postgres
-      - redis
-
-  worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: ["python", "-m", "app.workers.media_worker"]
-    environment:
-      - OLLAMA_URL=http://ollama:11434
-      - OLLAMA_TIMEOUT_SECONDS=30
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./data/media:/data/media
-    depends_on:
-      - postgres
-      - redis
-
   postgres:
     image: pgvector/pgvector:pg16
+    container_name: platform-postgres
+    restart: unless-stopped
     environment:
-      - POSTGRES_DB=${POSTGRES_DB:-platform}
-      - POSTGRES_USER=${POSTGRES_USER:-platform_user}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-platform_password}
+      - POSTGRES_DB=platform
+      - POSTGRES_USER=platform_user
+      - POSTGRES_PASSWORD=platform_password
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ./infra/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_user -d platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7.2-alpine
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-
-  ollama:
-    image: ollama/ollama:latest
-    ports:
-      - "11434:11434"
-
-  comfyui:
-    image: python:3.12-slim
-    command: ["sh", "-c", "echo 'ComfyUI placeholder container'; tail -f /dev/null"]
+    container_name: platform-redis
+    restart: unless-stopped
 
 volumes:
   pg_data:

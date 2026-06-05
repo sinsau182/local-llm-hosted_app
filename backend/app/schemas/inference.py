@@ -3,13 +3,14 @@ from pydantic import BaseModel, Field
 
 class ChatRequest(BaseModel):
     prompt: str = Field(min_length=1)
-    model: str = "qwen2.5-coder:14b"
-    max_tokens: int = 512
+    model: str = "auto"
+    max_tokens: int = 2000
 
 
 class ChatResponse(BaseModel):
     request_id: str
     output: str
+    routed_model: str = ""
 
 
 class MediaRequest(BaseModel):
@@ -36,3 +37,41 @@ class ModelInfo(BaseModel):
 
 class ModelsResponse(BaseModel):
     models: list[ModelInfo]
+
+
+class EmbedRequest(BaseModel):
+    input: str | list[str] = Field(min_length=1)
+
+
+class EmbedResponse(BaseModel):
+    embeddings: list[list[float]]
+    model: str
+    dimensions: int
+
+
+class AddDocRequest(BaseModel):
+    text: str = Field(min_length=1)
+    metadata: dict[str, str] = Field(default_factory=dict)
+    doc_id: str = ""
+
+
+class AddDocResponse(BaseModel):
+    doc_id: str
+    dimensions: int
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    n_results: int = Field(default=5, ge=1, le=20)
+
+
+class SearchResult(BaseModel):
+    doc_id: str
+    text: str
+    metadata: dict[str, str]
+    distance: float
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResult]
+    query: str

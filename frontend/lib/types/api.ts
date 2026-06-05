@@ -50,6 +50,7 @@ export type ChatRequest = {
 export type ChatResponse = {
   request_id: string;
   output: string;
+  routed_model: string;
 };
 
 export type MediaRequest = {
@@ -77,6 +78,44 @@ export type Artifact = {
 
 export type ArtifactListResponse = {
   items: Artifact[];
+};
+
+export type EmbedRequest = {
+  input: string | string[];
+};
+
+export type EmbedResponse = {
+  embeddings: number[][];
+  model: string;
+  dimensions: number;
+};
+
+export type AddDocRequest = {
+  text: string;
+  metadata?: Record<string, string>;
+  doc_id?: string;
+};
+
+export type AddDocResponse = {
+  doc_id: string;
+  dimensions: number;
+};
+
+export type SearchRequest = {
+  query: string;
+  n_results?: number;
+};
+
+export type SearchResult = {
+  doc_id: string;
+  text: string;
+  metadata: Record<string, string>;
+  distance: number;
+};
+
+export type SearchResponse = {
+  results: SearchResult[];
+  query: string;
 };
 
 export type QuotaResponse = {
