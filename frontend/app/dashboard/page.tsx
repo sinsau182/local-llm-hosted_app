@@ -112,7 +112,7 @@ export default function DashboardPage() {
           Media jobs are expected under /data/media/{`{user_id}`}/{`{date}`}/{`{job_uuid}`}, with quota-aware controls and async job execution.
         </p>
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
-          <Link href="/inference" className="rounded-xl border border-ink/20 bg-white px-4 py-2">Open inference</Link>
+          <Link href="/" className="rounded-xl border border-ink/20 bg-white px-4 py-2">Open console</Link>
           <Link href="/storage" className="rounded-xl border border-ink/20 bg-white px-4 py-2">Open storage</Link>
           <Link href="/system" className="rounded-xl border border-ink/20 bg-white px-4 py-2">Open system</Link>
         </div>

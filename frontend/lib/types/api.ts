@@ -41,10 +41,16 @@ export type ModelsResponse = {
   models: ModelInfo[];
 };
 
+export type ChatHistoryMessage = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+
 export type ChatRequest = {
   prompt: string;
   model?: string;
   max_tokens?: number;
+  messages?: ChatHistoryMessage[];
 };
 
 export type ChatResponse = {
