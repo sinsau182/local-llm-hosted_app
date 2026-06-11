@@ -4,6 +4,8 @@ import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ModelLauncher } from "@/components/model-launcher";
+import { appConfig } from "@/config/app-config";
 import { ApiError, apiClient } from "@/lib/api/client";
 
 type ModelEntry = {
@@ -25,12 +27,7 @@ const directModelHints: Record<string, string> = {
   "qwen3.5-9b": "Fast general chat",
 };
 
-const nativeModelUis = [
-  { label: "LiteLLM router", href: "http://localhost:4000", detail: "Auto route dashboard" },
-  { label: "qwen3.5:27b", href: "http://localhost:8081", detail: "Native llama.cpp chat" },
-  { label: "qwen3.6:9b", href: "http://localhost:8182", detail: "Native llama.cpp chat" },
-  { label: "qwen-coder-next", href: "http://localhost:8181", detail: "Native llama.cpp chat" },
-];
+const nativeModelUis = appConfig.models;
 
 const chatStorageKey = "breachlabz-chat-messages";
 const welcomeMessages: ChatMessage[] = [
@@ -397,6 +394,10 @@ export default function HomePage() {
     } catch (error) {
       setFriendlyError(error);
     }
+  }
+
+  if (!appConfig.features.chatPage) {
+    return <ModelLauncher models={appConfig.models} />;
   }
 
   return (
