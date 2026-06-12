@@ -1,9 +1,26 @@
 import type { QwenModel } from "@/config/app-config";
+import { LiteLlmLaunchButton } from "@/components/litellm-launcher";
+
+const cardClass =
+  "group flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-600 hover:shadow-md";
+
+function CardBody({ model }: { model: QwenModel }) {
+  return (
+    <>
+      <span className="font-display text-lg font-semibold text-ink">{model.label}</span>
+      <span className="text-sm text-ink/60">{model.description ?? model.detail}</span>
+      <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-cyan-700 opacity-0 transition group-hover:opacity-100">
+        {model.autoLogin ? "Log in & open →" : "Open →"}
+      </span>
+    </>
+  );
+}
 
 /**
  * Shown on the home page when the chat console is disabled via the master
  * config. Lists every local model runner as a clickable card that opens the
- * localhost port serving that model.
+ * localhost port serving that model. Entries flagged `autoLogin` log straight
+ * into LiteLLM using the configured credentials instead.
  */
 export function ModelLauncher({ models }: { models: QwenModel[] }) {
   return (
@@ -18,26 +35,23 @@ export function ModelLauncher({ models }: { models: QwenModel[] }) {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
-        {models.map((model) => (
-          <a
-            key={model.href}
-            href={model.href}
-            target="_blank"
-            rel="noreferrer"
-            className="group flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-600 hover:shadow-md"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-display text-lg font-semibold text-ink">{model.label}</span>
-              <span className="rounded-full bg-cyan-50 px-2.5 py-1 text-xs font-medium text-cyan-700 transition group-hover:bg-cyan-100">
-                {model.href.replace("http://", "")}
-              </span>
-            </div>
-            <span className="text-sm text-ink/60">{model.description ?? model.detail}</span>
-            <span className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-cyan-700 opacity-0 transition group-hover:opacity-100">
-              Open runner →
-            </span>
-          </a>
-        ))}
+        {models.map((model) =>
+          model.autoLogin ? (
+            <LiteLlmLaunchButton key={model.href} className={cardClass} target={model.href}>
+              <CardBody model={model} />
+            </LiteLlmLaunchButton>
+          ) : (
+            <a
+              key={model.href}
+              href={model.href}
+              target="_blank"
+              rel="noreferrer"
+              className={cardClass}
+            >
+              <CardBody model={model} />
+            </a>
+          ),
+        )}
       </div>
     </section>
   );

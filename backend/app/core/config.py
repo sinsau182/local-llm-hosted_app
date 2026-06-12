@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     app_env: str = "dev"
     api_prefix: str = "/backend/v1"
 
-    llama_url: str = "http://localhost:4000"
-    llama_timeout_seconds: float = 30.0
+    llama_url: str = "http://localhost:4001"
+    llama_timeout_seconds: float = 600.0
     litellm_api_key: str = "sk-f4fe27901e83c3ebf669625d9b291d27dc4908b2a671bb91f3bdda42e905d2b3"
 
     chromadb_host: str = "localhost"

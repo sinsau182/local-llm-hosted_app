@@ -57,6 +57,16 @@ def _pick_model(prompt: str) -> str:
     return "qwen3.5-9b"
 
 
+def _chat_messages(payload: ChatRequest) -> list[dict[str, str]]:
+    history = [
+        {"role": message.role, "content": message.content}
+        for message in payload.messages[-20:]
+        if message.content.strip()
+    ]
+    history.append({"role": "user", "content": payload.prompt})
+    return history
+
+
 _QUANT_BITS: dict[str, float] = {
     "Q2_K": 2.6,
     "Q3_K_S": 3.0, "Q3_K_M": 3.3, "Q3_K_L": 3.6,
@@ -135,12 +145,13 @@ class InferenceService:
         return self._artifact_root / f"{job_id}.{media_type}.txt"
 
     def _llama_chat(self, payload: ChatRequest) -> tuple[str, str]:
-        model = _pick_model(payload.prompt) if payload.model == "auto" else payload.model
+        routing_text = "\n".join([message.content for message in payload.messages[-6:]] + [payload.prompt])
+        model = _pick_model(routing_text) if payload.model == "auto" else payload.model
         response = self._request_json(
             "/v1/chat/completions",
             {
                 "model": model,
-                "messages": [{"role": "user", "content": payload.prompt}],
+                "messages": _chat_messages(payload),
                 "max_tokens": payload.max_tokens,
                 "stream": False,
             },
@@ -153,7 +164,8 @@ class InferenceService:
         return content, model
 
     def chat(self, payload: ChatRequest) -> ChatResponse:
-        intended_model = _pick_model(payload.prompt) if payload.model == "auto" else payload.model
+        routing_text = "\n".join([message.content for message in payload.messages[-6:]] + [payload.prompt])
+        intended_model = _pick_model(routing_text) if payload.model == "auto" else payload.model
         try:
             output, routed_model = self._llama_chat(payload)
         except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError):

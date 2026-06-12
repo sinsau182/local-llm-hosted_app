@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ModelLauncher } from "@/components/model-launcher";
+import { LiteLlmLaunchButton } from "@/components/litellm-launcher";
 import { appConfig } from "@/config/app-config";
 import { ApiError, apiClient } from "@/lib/api/client";
 
@@ -489,18 +490,26 @@ export default function HomePage() {
           <p className="text-xs font-semibold uppercase text-cyan-700">Native chat UIs</p>
           <h2 className="font-display text-xl font-semibold">Open model page</h2>
           <div className="mt-4 grid gap-2">
-            {nativeModelUis.map((entry) => (
-              <a
-                key={entry.href}
-                href={entry.href}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-xl border border-ink/10 bg-white px-3 py-3 text-sm transition hover:border-cyan-600 hover:bg-cyan-50"
-              >
-                <span className="block font-medium text-ink">{entry.label}</span>
-                <span className="mt-1 block text-xs text-ink/60">{entry.detail} · {entry.href.replace("http://", "")}</span>
-              </a>
-            ))}
+            {nativeModelUis.map((entry) => {
+              const cardClass =
+                "rounded-xl border border-ink/10 bg-white px-3 py-3 text-left text-sm transition hover:border-cyan-600 hover:bg-cyan-50";
+              const body = (
+                <>
+                  <span className="block font-medium text-ink">{entry.label}</span>
+                  <span className="mt-1 block text-xs text-ink/60">{entry.detail}</span>
+                </>
+              );
+
+              return entry.autoLogin ? (
+                <LiteLlmLaunchButton key={entry.href} className={cardClass} target={entry.href}>
+                  {body}
+                </LiteLlmLaunchButton>
+              ) : (
+                <a key={entry.href} href={entry.href} target="_blank" rel="noreferrer" className={cardClass}>
+                  {body}
+                </a>
+              );
+            })}
           </div>
         </section>
 
