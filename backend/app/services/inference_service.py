@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import json
+import random
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib import error, request
+from urllib import error, parse, request
 from uuid import uuid4
 
 from app.core.config import settings
@@ -178,25 +180,179 @@ class InferenceService:
             routed_model=routed_model,
         )
 
+    # ─── ComfyUI integration ────────────────────────────────────────────────
+    def _comfy_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:
+        req = request.Request(
+            f"{settings.comfyui_url.rstrip('/')}{path}",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with request.urlopen(req, timeout=settings.comfyui_timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _comfy_get(self, path: str) -> dict[str, Any]:
+        req = request.Request(f"{settings.comfyui_url.rstrip('/')}{path}", method="GET")
+        with request.urlopen(req, timeout=settings.comfyui_timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
+
+    def _comfy_get_bytes(self, path: str) -> bytes:
+        req = request.Request(f"{settings.comfyui_url.rstrip('/')}{path}", method="GET")
+        with request.urlopen(req, timeout=settings.comfyui_timeout_seconds) as response:
+            return response.read()
+
+    def _flux_workflow(self, prompt: str, width: int, height: int, steps: int, seed: int) -> dict[str, Any]:
+        """Flux.1-schnell text-to-image graph in ComfyUI API format."""
+        return {
+            "4": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": settings.comfyui_checkpoint}},
+            "5": {"class_type": "EmptySD3LatentImage", "inputs": {"width": width, "height": height, "batch_size": 1}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["4", 1]}},
+            "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "", "clip": ["4", 1]}},
+            "3": {"class_type": "KSampler", "inputs": {
+                "seed": seed, "steps": steps, "cfg": 1.0, "sampler_name": "euler",
+                "scheduler": "simple", "denoise": 1.0,
+                "model": ["4", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0],
+            }},
+            "8": {"class_type": "VAEDecode", "inputs": {"samples": ["3", 0], "vae": ["4", 2]}},
+            "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "flux_gen", "images": ["8", 0]}},
+        }
+
+    def _http_error_detail(self, exc: error.HTTPError) -> str:
+        try:
+            return exc.read().decode("utf-8")[:400]
+        except Exception:  # noqa: BLE001
+            return str(exc)
+
+    def _completed_response(self, job: dict[str, Any]) -> JobStatusResponse:
+        image = None
+        artifact_path = job.get("artifact_path")
+        if artifact_path and Path(artifact_path).exists():
+            encoded = base64.b64encode(Path(artifact_path).read_bytes()).decode("ascii")
+            image = f"data:image/png;base64,{encoded}"
+        return JobStatusResponse(
+            job_id=str(job["job_id"]), status="COMPLETED",
+            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")), image=image,
+        )
+
+    def _fail_job(self, job: dict[str, Any], message: str) -> JobStatusResponse:
+        job["status"] = "FAILED"
+        job["error"] = message
+        job["updated_at"] = self._timestamp()
+        self._save_job(job)
+        return JobStatusResponse(
+            job_id=str(job["job_id"]), status="FAILED",
+            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")), error=message,
+        )
+
     def submit_media(self, payload: MediaRequest) -> MediaSubmitResponse:
         job_id = str(uuid4())
+        seed = payload.seed if payload.seed is not None else random.randint(0, 2**31 - 1)
         job = {
             "job_id": job_id,
-            "status": "QUEUED",
+            "status": "PROCESSING",
             "prompt": payload.prompt,
             "media_type": payload.media_type,
             "model": payload.model,
+            "width": payload.width,
+            "height": payload.height,
+            "steps": payload.steps,
+            "seed": seed,
             "created_at": self._timestamp(),
             "updated_at": self._timestamp(),
         }
+
+        if payload.media_type != "image":
+            job["status"] = "FAILED"
+            job["error"] = "Video generation is not available yet — image only for now."
+            self._save_job(job)
+            return MediaSubmitResponse(job_id=job_id, status="FAILED")
+
+        workflow = self._flux_workflow(payload.prompt, payload.width, payload.height, payload.steps, seed)
+        try:
+            response = self._comfy_post("/prompt", {"prompt": workflow, "client_id": job_id})
+            prompt_id = response.get("prompt_id")
+            if not prompt_id:
+                raise ValueError(json.dumps(response)[:400])
+            job["comfy_prompt_id"] = prompt_id
+        except error.HTTPError as exc:
+            job["status"] = "FAILED"
+            job["error"] = f"ComfyUI rejected the job: {self._http_error_detail(exc)}"
+        except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            job["status"] = "FAILED"
+            job["error"] = f"Could not reach ComfyUI: {exc}"
+
         self._save_job(job)
-        return MediaSubmitResponse(job_id=job_id, status="QUEUED")
+        return MediaSubmitResponse(job_id=job_id, status=str(job["status"]))
+
+    def _job_expired(self, job: dict[str, Any], max_seconds: float = 600.0) -> bool:
+        try:
+            created = datetime.fromisoformat(str(job.get("created_at")))
+        except (TypeError, ValueError):
+            return False
+        return (datetime.now(UTC) - created).total_seconds() > max_seconds
 
     def get_job(self, job_id: str) -> JobStatusResponse:
         job = self._load_job(job_id)
         if job is None:
             return JobStatusResponse(job_id=job_id, status="NOT_FOUND")
-        return JobStatusResponse(job_id=job_id, status=str(job.get("status", "UNKNOWN")))
+
+        status = str(job.get("status", "UNKNOWN"))
+        if status == "COMPLETED":
+            return self._completed_response(job)
+        if status == "FAILED":
+            return JobStatusResponse(
+                job_id=job_id, status="FAILED",
+                media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")),
+                error=job.get("error"),
+            )
+
+        prompt_id = job.get("comfy_prompt_id")
+        if not prompt_id:
+            return JobStatusResponse(job_id=job_id, status=status, prompt=str(job.get("prompt", "")))
+
+        try:
+            history = self._comfy_get(f"/history/{prompt_id}")
+        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError):
+            return JobStatusResponse(job_id=job_id, status="PROCESSING", prompt=str(job.get("prompt", "")))
+
+        entry = history.get(prompt_id)
+        if not entry:
+            # Still queued/running. Give up only if it has run far too long.
+            if self._job_expired(job):
+                return self._fail_job(job, "Generation timed out.")
+            return JobStatusResponse(job_id=job_id, status="PROCESSING", prompt=str(job.get("prompt", "")))
+
+        # The prompt finished — locate the saved image among the node outputs.
+        image_info = None
+        for node_output in (entry.get("outputs") or {}).values():
+            images = node_output.get("images")
+            if images:
+                image_info = images[0]
+                break
+
+        if not image_info:
+            comfy_status = entry.get("status") or {}
+            messages = comfy_status.get("messages") or []
+            return self._fail_job(job, f"ComfyUI finished without an image. {messages}"[:400])
+
+        try:
+            query = parse.urlencode({
+                "filename": image_info.get("filename", ""),
+                "subfolder": image_info.get("subfolder", ""),
+                "type": image_info.get("type", "output"),
+            })
+            data = self._comfy_get_bytes(f"/view?{query}")
+        except (error.URLError, error.HTTPError, TimeoutError) as exc:
+            return self._fail_job(job, f"Could not fetch the generated image: {exc}")
+
+        artifact = self._artifact_root / f"{job_id}.png"
+        artifact.parent.mkdir(parents=True, exist_ok=True)
+        artifact.write_bytes(data)
+        job["status"] = "COMPLETED"
+        job["artifact_path"] = str(artifact)
+        job["updated_at"] = self._timestamp()
+        self._save_job(job)
+        return self._completed_response(job)
 
     def list_pending_media_jobs(self) -> list[dict[str, Any]]:
         self._ensure_job_root()

@@ -9,9 +9,13 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    # Backend FEATURE_* toggles come from the root master .env (runtime).
+    env_file:
+      - .env
     environment:
       - LLAMA_URL=http://host.docker.internal:4001
       - LLAMA_TIMEOUT_SECONDS=600
+      - COMFYUI_URL=http://host.docker.internal:8188
       - LITELLM_API_KEY=sk-f4fe27901e83c3ebf669625d9b291d27dc4908b2a671bb91f3bdda42e905d2b3
       - CHROMADB_HOST=host.docker.internal
       - CHROMADB_PORT=8010
@@ -32,6 +36,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # Frontend NEXT_PUBLIC_* toggles from the root master .env are baked in at
+      # build time. Change them in .env then: docker compose up -d --build frontend
+      args:
+        NEXT_PUBLIC_FEATURE_CHAT_PAGE: ${NEXT_PUBLIC_FEATURE_CHAT_PAGE:-false}
+        NEXT_PUBLIC_FEATURE_DASHBOARD_TAB: ${NEXT_PUBLIC_FEATURE_DASHBOARD_TAB:-false}
     container_name: platform-frontend
     restart: unless-stopped
     ports:

@@ -1,5 +1,6 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
 
+from app.core.config import settings
 from app.schemas.inference import (
     ChatRequest,
     ChatResponse,
@@ -24,6 +25,11 @@ async def chat(payload: ChatRequest) -> ChatResponse:
 
 @router.post("/media", response_model=MediaSubmitResponse, status_code=202)
 async def submit_media(payload: MediaRequest) -> MediaSubmitResponse:
+    if not settings.feature_media_queue:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Media generation is disabled (FEATURE_MEDIA_QUEUE=false).",
+        )
     return service.submit_media(payload)
 
 

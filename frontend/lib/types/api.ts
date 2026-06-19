@@ -61,8 +61,12 @@ export type ChatResponse = {
 
 export type MediaRequest = {
   prompt: string;
-  media_type: "image" | "video";
-  model: string;
+  media_type?: "image" | "video";
+  model?: string;
+  width?: number;
+  height?: number;
+  steps?: number;
+  seed?: number;
 };
 
 export type MediaSubmitResponse = {
@@ -73,6 +77,10 @@ export type MediaSubmitResponse = {
 export type JobStatusResponse = {
   job_id: string;
   status: string;
+  media_type?: string;
+  prompt?: string;
+  image?: string | null;
+  error?: string | null;
 };
 
 export type Artifact = {

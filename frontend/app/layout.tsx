@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import "./globals.css";
+import { appConfig } from "../config/app-config";
 
 export const metadata: Metadata = {
   title: "BreachLabz LLM Agent",
@@ -19,7 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <nav className="flex items-center gap-4 text-sm text-ink/70">
                 <Link href="/">Chat</Link>
-                <Link href="/dashboard">Dashboard</Link>
+                <Link href="/generate">Generate</Link>
+                {appConfig.features.dashboardTab && (
+                  <Link href="/dashboard">Dashboard</Link>
+                )}
                 <Link href="/login">Login</Link>
               </nav>
             </div>

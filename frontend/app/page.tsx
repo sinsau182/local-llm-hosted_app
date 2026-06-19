@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ModelLauncher } from "@/components/model-launcher";
 import { LiteLlmLaunchButton } from "@/components/litellm-launcher";
+import { LibreChatLaunchButton } from "@/components/librechat-launcher";
 import { appConfig } from "@/config/app-config";
 import { ApiError, apiClient } from "@/lib/api/client";
 
@@ -500,10 +501,14 @@ export default function HomePage() {
                 </>
               );
 
-              return entry.autoLogin ? (
+              return entry.launcher === "litellm" ? (
                 <LiteLlmLaunchButton key={entry.href} className={cardClass} target={entry.href}>
                   {body}
                 </LiteLlmLaunchButton>
+              ) : entry.launcher === "librechat" ? (
+                <LibreChatLaunchButton key={entry.href} className={cardClass} target={entry.href}>
+                  {body}
+                </LibreChatLaunchButton>
               ) : (
                 <a key={entry.href} href={entry.href} target="_blank" rel="noreferrer" className={cardClass}>
                   {body}

@@ -23,8 +23,12 @@ class ChatResponse(BaseModel):
 
 class MediaRequest(BaseModel):
     prompt: str = Field(min_length=1)
-    media_type: str = Field(pattern="^(image|video)$")
-    model: str
+    media_type: str = Field(default="image", pattern="^(image|video)$")
+    model: str = "flux1-schnell"
+    width: int = Field(default=1024, ge=256, le=1536)
+    height: int = Field(default=1024, ge=256, le=1536)
+    steps: int = Field(default=4, ge=1, le=20)
+    seed: int | None = None
 
 
 class MediaSubmitResponse(BaseModel):
@@ -35,6 +39,10 @@ class MediaSubmitResponse(BaseModel):
 class JobStatusResponse(BaseModel):
     job_id: str
     status: str
+    media_type: str = ""
+    prompt: str = ""
+    image: str | None = None  # data URL, present when status == COMPLETED
+    error: str | None = None
 
 
 class ModelInfo(BaseModel):

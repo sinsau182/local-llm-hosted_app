@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { notFound } from "next/navigation";
 
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { apiClient } from "@/lib/api/client";
+import { appConfig } from "@/config/app-config";
 import Link from "next/link";
 
 const endpointGroups = [
@@ -45,6 +47,10 @@ const architectureLayers = [
 ];
 
 export default function DashboardPage() {
+  if (!appConfig.features.dashboardTab) {
+    notFound();
+  }
+
   const [queue, setQueue] = useState<number | null>(null);
   const [vramUsed, setVramUsed] = useState<number | null>(null);
   const [vramTotal, setVramTotal] = useState<number | null>(null);

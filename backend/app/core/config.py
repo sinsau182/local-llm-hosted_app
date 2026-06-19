@@ -28,6 +28,15 @@ class Settings(BaseSettings):
     max_storage_bytes: int = 322122547200
     max_request_timeout_seconds: int = 600
 
+    # ComfyUI (image generation)
+    comfyui_url: str = "http://localhost:8188"
+    comfyui_checkpoint: str = "flux1-schnell-fp8.safetensors"
+    comfyui_timeout_seconds: float = 180.0
+
+    # Feature toggles — source of truth is the root master .env (FEATURE_*).
+    feature_media_queue: bool = True
+    feature_doc_rag: bool = True
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 

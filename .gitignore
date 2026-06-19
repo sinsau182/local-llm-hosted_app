@@ -13,7 +13,6 @@ out/
 # Env and secrets
 .env
 .env.*
-!.env.example
 backend/.env
 frontend/.env.local
 
