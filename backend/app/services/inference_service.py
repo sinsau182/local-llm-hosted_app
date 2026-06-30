@@ -2,15 +2,20 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import random
 import re
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib import error, parse, request
 from uuid import uuid4
 
+import redis
+
 from app.core.config import settings
+from app.services.media_queue import MediaQueue
 from app.schemas.inference import (
     ChatRequest,
     ChatResponse,
@@ -22,6 +27,8 @@ from app.schemas.inference import (
     ModelInfo,
     ModelsResponse,
 )
+
+logger = logging.getLogger("inference_service")
 
 _CHAT_MODELS = ["qwen3-coder-next", "qwen3.6-27b", "qwen3.5-9b"]
 
@@ -107,6 +114,7 @@ class InferenceService:
     def __init__(self) -> None:
         self._job_root = Path(settings.media_root) / "_jobs"
         self._artifact_root = Path(settings.media_root) / "generated"
+        self.queue = MediaQueue()
 
     def _request_json(self, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         body = None if payload is None else json.dumps(payload).encode("utf-8")
@@ -141,10 +149,6 @@ class InferenceService:
     def _save_job(self, job: dict[str, Any]) -> None:
         job_path = self._job_path(str(job["job_id"]))
         job_path.write_text(json.dumps(job, indent=2, sort_keys=True), encoding="utf-8")
-
-    def _artifact_path(self, job_id: str, media_type: str) -> Path:
-        self._artifact_root.mkdir(parents=True, exist_ok=True)
-        return self._artifact_root / f"{job_id}.{media_type}.txt"
 
     def _llama_chat(self, payload: ChatRequest) -> tuple[str, str]:
         routing_text = "\n".join([message.content for message in payload.messages[-6:]] + [payload.prompt])
@@ -217,6 +221,80 @@ class InferenceService:
             "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "flux_gen", "images": ["8", 0]}},
         }
 
+    def _ltx_video_workflow(
+        self, prompt: str, width: int, height: int, num_frames: int, steps: int, seed: int, fps: float,
+    ) -> dict[str, Any]:
+        """LTX-Video 2B distilled text-to-video graph in ComfyUI API format.
+
+        Classic LTXV pipeline: checkpoint bundles the VAE; the T5 text encoder is
+        loaded separately. The distilled model runs at cfg 1.0 with few steps.
+        SaveVideo writes an .mp4 and reports it under the node's ``images`` output.
+        """
+        negative = "worst quality, inconsistent motion, blurry, jittery, distorted, watermark"
+        return {
+            "40": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": settings.ltx_checkpoint}},
+            "41": {"class_type": "CLIPLoader", "inputs": {"clip_name": settings.ltx_t5_encoder, "type": "ltxv"}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["41", 0]}},
+            "7": {"class_type": "CLIPTextEncode", "inputs": {"text": negative, "clip": ["41", 0]}},
+            "8": {"class_type": "EmptyLTXVLatentVideo", "inputs": {
+                "width": width, "height": height, "length": num_frames, "batch_size": 1}},
+            "9": {"class_type": "LTXVConditioning", "inputs": {
+                "positive": ["6", 0], "negative": ["7", 0], "frame_rate": fps}},
+            "10": {"class_type": "CFGGuider", "inputs": {
+                "model": ["40", 0], "positive": ["9", 0], "negative": ["9", 1], "cfg": 1.0}},
+            "11": {"class_type": "LTXVScheduler", "inputs": {
+                "steps": steps, "max_shift": 2.05, "base_shift": 0.95, "stretch": True,
+                "terminal": 0.1, "latent": ["8", 0]}},
+            "12": {"class_type": "KSamplerSelect", "inputs": {"sampler_name": "euler"}},
+            "13": {"class_type": "RandomNoise", "inputs": {"noise_seed": seed}},
+            "14": {"class_type": "SamplerCustomAdvanced", "inputs": {
+                "noise": ["13", 0], "guider": ["10", 0], "sampler": ["12", 0],
+                "sigmas": ["11", 0], "latent_image": ["8", 0]}},
+            "15": {"class_type": "VAEDecode", "inputs": {"samples": ["14", 0], "vae": ["40", 2]}},
+            "16": {"class_type": "CreateVideo", "inputs": {"images": ["15", 0], "fps": fps}},
+            "17": {"class_type": "SaveVideo", "inputs": {
+                "video": ["16", 0], "filename_prefix": "ltx_gen", "format": "auto", "codec": "auto"}},
+        }
+
+    def _wan22_video_workflow(
+        self, prompt: str, width: int, height: int, num_frames: int, steps: int, seed: int, fps: float,
+    ) -> dict[str, Any]:
+        """Wan 2.2 T2V-A14B text-to-video graph in ComfyUI API format.
+
+        Two-expert MoE: the high-noise expert denoises steps [0, switch) and hands
+        the leftover-noise latent to the low-noise expert for [switch, steps). Both
+        experts are GGUF Q4 (UnetLoaderGGUF); the umt5 text encoder is GGUF
+        (CLIPLoaderGGUF, type "wan") and the VAE is the Wan2.1 safetensors. Mirrors
+        the LTXV path's CreateVideo->SaveVideo so the artifact lands as an .mp4.
+        """
+        switch = max(1, min(settings.wan_switch_step, steps - 1))
+        return {
+            "37": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": settings.wan_high_noise_gguf}},
+            "38": {"class_type": "UnetLoaderGGUF", "inputs": {"unet_name": settings.wan_low_noise_gguf}},
+            "54": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["37", 0], "shift": settings.wan_shift}},
+            "55": {"class_type": "ModelSamplingSD3", "inputs": {"model": ["38", 0], "shift": settings.wan_shift}},
+            "39": {"class_type": "CLIPLoaderGGUF", "inputs": {"clip_name": settings.wan_umt5_gguf, "type": "wan"}},
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": prompt, "clip": ["39", 0]}},
+            "7": {"class_type": "CLIPTextEncode", "inputs": {"text": settings.wan_negative, "clip": ["39", 0]}},
+            "40": {"class_type": "VAELoader", "inputs": {"vae_name": settings.wan_vae}},
+            "5": {"class_type": "EmptyHunyuanLatentVideo", "inputs": {
+                "width": width, "height": height, "length": num_frames, "batch_size": 1}},
+            "57": {"class_type": "KSamplerAdvanced", "inputs": {
+                "add_noise": "enable", "noise_seed": seed, "steps": steps, "cfg": settings.wan_cfg,
+                "sampler_name": settings.wan_sampler, "scheduler": settings.wan_scheduler,
+                "start_at_step": 0, "end_at_step": switch, "return_with_leftover_noise": "enable",
+                "model": ["54", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["5", 0]}},
+            "58": {"class_type": "KSamplerAdvanced", "inputs": {
+                "add_noise": "disable", "noise_seed": seed, "steps": steps, "cfg": settings.wan_cfg,
+                "sampler_name": settings.wan_sampler, "scheduler": settings.wan_scheduler,
+                "start_at_step": switch, "end_at_step": 10000, "return_with_leftover_noise": "disable",
+                "model": ["55", 0], "positive": ["6", 0], "negative": ["7", 0], "latent_image": ["57", 0]}},
+            "8": {"class_type": "VAEDecode", "inputs": {"samples": ["58", 0], "vae": ["40", 0]}},
+            "16": {"class_type": "CreateVideo", "inputs": {"images": ["8", 0], "fps": fps}},
+            "17": {"class_type": "SaveVideo", "inputs": {
+                "video": ["16", 0], "filename_prefix": "wan22_gen", "format": "auto", "codec": "auto"}},
+        }
+
     def _http_error_detail(self, exc: error.HTTPError) -> str:
         try:
             return exc.read().decode("utf-8")[:400]
@@ -225,13 +303,18 @@ class InferenceService:
 
     def _completed_response(self, job: dict[str, Any]) -> JobStatusResponse:
         image = None
+        video = None
         artifact_path = job.get("artifact_path")
         if artifact_path and Path(artifact_path).exists():
             encoded = base64.b64encode(Path(artifact_path).read_bytes()).decode("ascii")
-            image = f"data:image/png;base64,{encoded}"
+            if job.get("media_type") == "video":
+                video = f"data:video/mp4;base64,{encoded}"
+            else:
+                image = f"data:image/png;base64,{encoded}"
         return JobStatusResponse(
             job_id=str(job["job_id"]), status="COMPLETED",
-            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")), image=image,
+            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")),
+            image=image, video=video,
         )
 
     def _fail_job(self, job: dict[str, Any], message: str) -> JobStatusResponse:
@@ -245,11 +328,13 @@ class InferenceService:
         )
 
     def submit_media(self, payload: MediaRequest) -> MediaSubmitResponse:
+        """Enqueue a media job (§9). Never calls ComfyUI directly — a single worker
+        drains the Redis FIFO so image/video/coder spikes can't collide."""
         job_id = str(uuid4())
         seed = payload.seed if payload.seed is not None else random.randint(0, 2**31 - 1)
         job = {
             "job_id": job_id,
-            "status": "PROCESSING",
+            "status": "QUEUED",
             "prompt": payload.prompt,
             "media_type": payload.media_type,
             "model": payload.model,
@@ -261,37 +346,142 @@ class InferenceService:
             "updated_at": self._timestamp(),
         }
 
-        if payload.media_type != "image":
-            job["status"] = "FAILED"
-            job["error"] = "Video generation is not available yet — image only for now."
-            self._save_job(job)
-            return MediaSubmitResponse(job_id=job_id, status="FAILED")
+        if payload.media_type == "video" and settings.video_model == "wan22":
+            # Wan 2.2 constraints: width/height multiple of 16, frames = (4n + 1).
+            # Dimensions are capped at the configured 480p default to keep the
+            # two-expert peak within the APU's shared-memory budget.
+            width = min(settings.wan_video_width, max(256, (payload.width // 16) * 16))
+            height = min(settings.wan_video_height, max(256, (payload.height // 16) * 16))
+            frames = payload.num_frames if payload.num_frames is not None else settings.wan_video_frames
+            frames = max(5, ((frames - 1) // 4) * 4 + 1)
+            fps = payload.fps if payload.fps is not None else settings.wan_video_fps
+            steps = payload.steps if payload.steps >= 10 else settings.wan_video_steps
+            job.update({"width": width, "height": height, "num_frames": frames, "fps": fps, "steps": steps})
+        elif payload.media_type == "video":
+            # LTXV constraints: width/height multiple of 32, frames = (n*8 + 1).
+            width = max(256, (payload.width // 32) * 32)
+            height = max(256, (payload.height // 32) * 32)
+            frames = payload.num_frames if payload.num_frames is not None else settings.ltx_video_frames
+            frames = max(9, ((frames - 1) // 8) * 8 + 1)
+            fps = payload.fps if payload.fps is not None else settings.ltx_video_fps
+            steps = payload.steps if payload.steps >= 6 else settings.ltx_video_steps
+            job.update({"width": width, "height": height, "num_frames": frames, "fps": fps, "steps": steps})
 
-        workflow = self._flux_workflow(payload.prompt, payload.width, payload.height, payload.steps, seed)
+        self._save_job(job)
+        try:
+            position, eta = self.queue.enqueue(job_id, payload.media_type)
+        except redis.RedisError as exc:
+            self._fail_job(job, f"Could not queue the job: {exc}")
+            return MediaSubmitResponse(job_id=job_id, status="FAILED")
+        return MediaSubmitResponse(
+            job_id=job_id, status="QUEUED", position=position, eta_seconds=eta,
+        )
+
+    def execute_job(self, job_id: str) -> bool:
+        """Run one queued job to completion: build the graph, submit to ComfyUI,
+        poll until it finishes, download the artifact. Called only by the worker,
+        one job at a time — this serialization is the §5/§9 memory safety net.
+        Returns True once the job reached a terminal state (COMPLETED/FAILED)."""
+        job = self._load_job(job_id)
+        if job is None:
+            return False
+
+        media_type = job.get("media_type")
+        if media_type == "video" and settings.video_model == "wan22":
+            workflow = self._wan22_video_workflow(
+                job["prompt"], job["width"], job["height"],
+                job["num_frames"], job["steps"], job["seed"], job["fps"],
+            )
+        elif media_type == "video":
+            workflow = self._ltx_video_workflow(
+                job["prompt"], job["width"], job["height"],
+                job["num_frames"], job["steps"], job["seed"], job["fps"],
+            )
+        else:
+            workflow = self._flux_workflow(
+                job["prompt"], job["width"], job["height"], job["steps"], job["seed"],
+            )
+
         try:
             response = self._comfy_post("/prompt", {"prompt": workflow, "client_id": job_id})
             prompt_id = response.get("prompt_id")
             if not prompt_id:
                 raise ValueError(json.dumps(response)[:400])
-            job["comfy_prompt_id"] = prompt_id
         except error.HTTPError as exc:
-            job["status"] = "FAILED"
-            job["error"] = f"ComfyUI rejected the job: {self._http_error_detail(exc)}"
+            self._fail_job(job, f"ComfyUI rejected the job: {self._http_error_detail(exc)}")
+            return True
         except (error.URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            job["status"] = "FAILED"
-            job["error"] = f"Could not reach ComfyUI: {exc}"
+            self._fail_job(job, f"Could not reach ComfyUI: {exc}")
+            return True
 
+        job["status"] = "PROCESSING"
+        job["comfy_prompt_id"] = prompt_id
+        job["updated_at"] = self._timestamp()
         self._save_job(job)
-        return MediaSubmitResponse(job_id=job_id, status=str(job["status"]))
+        return self._await_comfy_result(job, prompt_id)
 
-    def _job_expired(self, job: dict[str, Any], max_seconds: float = 600.0) -> bool:
-        try:
-            created = datetime.fromisoformat(str(job.get("created_at")))
-        except (TypeError, ValueError):
-            return False
-        return (datetime.now(UTC) - created).total_seconds() > max_seconds
+    def _await_comfy_result(self, job: dict[str, Any], prompt_id: str) -> bool:
+        """Block until ComfyUI reports the prompt in /history, then save the output."""
+        job_id = str(job["job_id"])
+        deadline = time.monotonic() + settings.media_job_timeout_seconds
+        poll = settings.media_poll_seconds
+        while time.monotonic() < deadline:
+            try:
+                history = self._comfy_get(f"/history/{prompt_id}")
+            except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError):
+                time.sleep(poll)
+                continue
+            entry = history.get(prompt_id)
+            if not entry:  # still queued/running inside ComfyUI
+                time.sleep(poll)
+                continue
+
+            info = self._find_output(entry)
+            if not info:
+                comfy_status = entry.get("status") or {}
+                messages = comfy_status.get("messages") or []
+                self._fail_job(job, f"ComfyUI finished without an artifact. {messages}"[:400])
+                return True
+
+            try:
+                query = parse.urlencode({
+                    "filename": info.get("filename", ""),
+                    "subfolder": info.get("subfolder", ""),
+                    "type": info.get("type", "output"),
+                })
+                data = self._comfy_get_bytes(f"/view?{query}")
+            except (error.URLError, error.HTTPError, TimeoutError) as exc:
+                self._fail_job(job, f"Could not fetch the generated artifact: {exc}")
+                return True
+
+            suffix = Path(str(info.get("filename", ""))).suffix or (
+                ".mp4" if job.get("media_type") == "video" else ".png"
+            )
+            artifact = self._artifact_root / f"{job_id}{suffix}"
+            artifact.parent.mkdir(parents=True, exist_ok=True)
+            artifact.write_bytes(data)
+            job["status"] = "COMPLETED"
+            job["artifact_path"] = str(artifact)
+            job["updated_at"] = self._timestamp()
+            self._save_job(job)
+            return True
+
+        self._fail_job(job, "Generation timed out.")
+        return True
+
+    @staticmethod
+    def _find_output(entry: dict[str, Any]) -> dict[str, Any] | None:
+        """Locate the saved file among ComfyUI node outputs (image or video)."""
+        for node_output in (entry.get("outputs") or {}).values():
+            for key in ("images", "gifs", "videos"):
+                items = node_output.get(key)
+                if items:
+                    return items[0]
+        return None
 
     def get_job(self, job_id: str) -> JobStatusResponse:
+        """Read-only status. The worker owns execution, so this just reflects the
+        stored job document, adding live queue position/ETA while QUEUED."""
         job = self._load_job(job_id)
         if job is None:
             return JobStatusResponse(job_id=job_id, status="NOT_FOUND")
@@ -306,94 +496,18 @@ class InferenceService:
                 error=job.get("error"),
             )
 
-        prompt_id = job.get("comfy_prompt_id")
-        if not prompt_id:
-            return JobStatusResponse(job_id=job_id, status=status, prompt=str(job.get("prompt", "")))
-
-        try:
-            history = self._comfy_get(f"/history/{prompt_id}")
-        except (error.URLError, error.HTTPError, TimeoutError, json.JSONDecodeError, ValueError):
-            return JobStatusResponse(job_id=job_id, status="PROCESSING", prompt=str(job.get("prompt", "")))
-
-        entry = history.get(prompt_id)
-        if not entry:
-            # Still queued/running. Give up only if it has run far too long.
-            if self._job_expired(job):
-                return self._fail_job(job, "Generation timed out.")
-            return JobStatusResponse(job_id=job_id, status="PROCESSING", prompt=str(job.get("prompt", "")))
-
-        # The prompt finished — locate the saved image among the node outputs.
-        image_info = None
-        for node_output in (entry.get("outputs") or {}).values():
-            images = node_output.get("images")
-            if images:
-                image_info = images[0]
-                break
-
-        if not image_info:
-            comfy_status = entry.get("status") or {}
-            messages = comfy_status.get("messages") or []
-            return self._fail_job(job, f"ComfyUI finished without an image. {messages}"[:400])
-
-        try:
-            query = parse.urlencode({
-                "filename": image_info.get("filename", ""),
-                "subfolder": image_info.get("subfolder", ""),
-                "type": image_info.get("type", "output"),
-            })
-            data = self._comfy_get_bytes(f"/view?{query}")
-        except (error.URLError, error.HTTPError, TimeoutError) as exc:
-            return self._fail_job(job, f"Could not fetch the generated image: {exc}")
-
-        artifact = self._artifact_root / f"{job_id}.png"
-        artifact.parent.mkdir(parents=True, exist_ok=True)
-        artifact.write_bytes(data)
-        job["status"] = "COMPLETED"
-        job["artifact_path"] = str(artifact)
-        job["updated_at"] = self._timestamp()
-        self._save_job(job)
-        return self._completed_response(job)
-
-    def list_pending_media_jobs(self) -> list[dict[str, Any]]:
-        self._ensure_job_root()
-        pending_jobs: list[dict[str, Any]] = []
-        for job_path in self._job_root.glob("*.json"):
-            try:
-                job = json.loads(job_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                continue
-            if job.get("status") == "QUEUED":
-                pending_jobs.append(job)
-        return pending_jobs
-
-    def complete_media_job(self, job_id: str) -> bool:
-        job = self._load_job(job_id)
-        if job is None:
-            return False
-
-        artifact_path = self._artifact_path(job_id, str(job.get("media_type", "media")))
-        artifact_path.write_text(
-            "\n".join([
-                f"job_id={job_id}",
-                f"model={job.get('model', 'unknown')}",
-                f"media_type={job.get('media_type', 'unknown')}",
-                f"prompt={job.get('prompt', '')}",
-            ]),
-            encoding="utf-8",
+        response = JobStatusResponse(
+            job_id=job_id, status=status,
+            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")),
         )
-
-        job["status"] = "COMPLETED"
-        job["artifact_path"] = str(artifact_path)
-        job["updated_at"] = self._timestamp()
-        self._save_job(job)
-        return True
-
-    def process_pending_media_jobs(self) -> int:
-        processed = 0
-        for job in self.list_pending_media_jobs():
-            if self.complete_media_job(str(job["job_id"])):
-                processed += 1
-        return processed
+        if status == "QUEUED":
+            try:
+                response.position, response.eta_seconds = self.queue.stats(
+                    job_id, str(job.get("media_type", "image")),
+                )
+            except redis.RedisError:
+                pass
+        return response
 
     def embed(self, payload: EmbedRequest) -> EmbedResponse:
         inputs = payload.input if isinstance(payload.input, list) else [payload.input]

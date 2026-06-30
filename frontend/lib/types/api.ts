@@ -67,11 +67,15 @@ export type MediaRequest = {
   height?: number;
   steps?: number;
   seed?: number;
+  num_frames?: number;
+  fps?: number;
 };
 
 export type MediaSubmitResponse = {
   job_id: string;
   status: string;
+  position?: number;
+  eta_seconds?: number;
 };
 
 export type JobStatusResponse = {
@@ -80,7 +84,10 @@ export type JobStatusResponse = {
   media_type?: string;
   prompt?: string;
   image?: string | null;
+  video?: string | null;
   error?: string | null;
+  position?: number;
+  eta_seconds?: number;
 };
 
 export type Artifact = {

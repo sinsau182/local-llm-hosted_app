@@ -32,6 +32,32 @@ services:
       redis:
         condition: service_started
 
+  # §5/§9 — single media worker. Drains the Redis FIFO one job at a time so
+  # image/video generations are serialized (no colliding GPU memory spikes).
+  media-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: platform-media-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.media_worker"]
+    env_file:
+      - .env
+    environment:
+      - COMFYUI_URL=http://host.docker.internal:8188
+      - REDIS_URL=redis://redis:6379/0
+      - MEDIA_ROOT=/data/media
+      # Flip to true once ai-server/model_loader.py is running to enable the
+      # video-exclusive mode switch + coder serial lock.
+      - MEDIA_ORCHESTRATOR_ENABLED=${MEDIA_ORCHESTRATOR_ENABLED:-false}
+    extra_hosts:
+      - "host.docker.internal:172.17.1.1"
+    volumes:
+      - ./data/media:/data/media
+    depends_on:
+      redis:
+        condition: service_started
+
   frontend:
     build:
       context: ./frontend
@@ -69,6 +95,12 @@ services:
     image: redis:7.2-alpine
     container_name: platform-redis
     restart: unless-stopped
+    # Published on loopback so the host orchestrator (ai-server/model_loader.py)
+    # shares the same queue/orchestration state as the api + worker containers.
+    # Host 6379 is taken by a system redis-server, so map to 6380 — point the
+    # orchestrator at it with REDIS_URL=redis://127.0.0.1:6380/0.
+    ports:
+      - "127.0.0.1:6380:6379"
 
 volumes:
   pg_data:

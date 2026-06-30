@@ -29,11 +29,16 @@ class MediaRequest(BaseModel):
     height: int = Field(default=1024, ge=256, le=1536)
     steps: int = Field(default=4, ge=1, le=20)
     seed: int | None = None
+    # Video-only (ignored for images). None -> service uses configured defaults.
+    num_frames: int | None = Field(default=None, ge=9, le=257)
+    fps: float | None = Field(default=None, ge=1, le=60)
 
 
 class MediaSubmitResponse(BaseModel):
     job_id: str
     status: str
+    position: int = 0       # 1-based place in line (0 = not queued)
+    eta_seconds: int = 0    # rough estimate until this job completes
 
 
 class JobStatusResponse(BaseModel):
@@ -41,8 +46,11 @@ class JobStatusResponse(BaseModel):
     status: str
     media_type: str = ""
     prompt: str = ""
-    image: str | None = None  # data URL, present when status == COMPLETED
+    image: str | None = None  # data URL, present when an image job is COMPLETED
+    video: str | None = None  # data URL, present when a video job is COMPLETED
     error: str | None = None
+    position: int = 0         # 1-based place in line while QUEUED (0 otherwise)
+    eta_seconds: int = 0      # rough estimate until this job completes
 
 
 class ModelInfo(BaseModel):
