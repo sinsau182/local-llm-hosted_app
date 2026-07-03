@@ -20,7 +20,8 @@ RUN pip install --no-cache-dir --upgrade pip && \
     "sqlalchemy>=2.0.30" \
     "psycopg[binary]>=3.1.19" \
     "redis>=5.0.7" \
-    "email-validator>=2.0.0"
+    "email-validator>=2.0.0" \
+    "boto3>=1.34.0"
 
 # Copy source last (cache only busts on code changes)
 COPY app ./app

@@ -22,6 +22,11 @@ services:
       - DATABASE_URL=postgresql+psycopg://platform_user:platform_password@postgres:5432/platform
       - REDIS_URL=redis://redis:6379/0
       - MEDIA_ROOT=/data/media
+      # Object storage for streaming generated assets back to the browser.
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=platform
+      - MINIO_SECRET_KEY=platform_secret
+      - MINIO_BUCKET=platform-media
     extra_hosts:
       - "host.docker.internal:172.17.1.1"
     volumes:
@@ -30,6 +35,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_started
+      minio:
         condition: service_started
 
   # §5/§9 — single media worker. Drains the Redis FIFO one job at a time so
@@ -58,6 +65,33 @@ services:
       redis:
         condition: service_started
 
+  # Ingests ComfyUI outputs (tagged user/<uid>/…) into the media bucket +
+  # Postgres so each user gets a browsable history of what they created.
+  media-ingester:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: platform-media-ingester
+    restart: unless-stopped
+    command: ["python", "-m", "app.workers.ingest_worker"]
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql+psycopg://platform_user:platform_password@postgres:5432/platform
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=platform
+      - MINIO_SECRET_KEY=platform_secret
+      - MINIO_BUCKET=platform-media
+      - COMFYUI_OUTPUT_DIR=/data/comfyui/output
+    volumes:
+      # ComfyUI's output dir on the host (read-only — ComfyUI owns the files).
+      - /data/comfyui/output:/data/comfyui/output:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_started
+
   frontend:
     build:
       context: ./frontend
@@ -67,6 +101,7 @@ services:
       args:
         NEXT_PUBLIC_FEATURE_CHAT_PAGE: ${NEXT_PUBLIC_FEATURE_CHAT_PAGE:-false}
         NEXT_PUBLIC_FEATURE_DASHBOARD_TAB: ${NEXT_PUBLIC_FEATURE_DASHBOARD_TAB:-false}
+        NEXT_PUBLIC_COMFYUI_URL: ${NEXT_PUBLIC_COMFYUI_URL:-}
     container_name: platform-frontend
     restart: unless-stopped
     ports:
@@ -102,5 +137,21 @@ services:
     ports:
       - "127.0.0.1:6380:6379"
 
+  # Object storage for generated media. Kept internal — the API streams objects
+  # back to the browser, so only the admin console is exposed (loopback only).
+  minio:
+    image: minio/minio:latest
+    container_name: platform-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=platform
+      - MINIO_ROOT_PASSWORD=platform_secret
+    ports:
+      - "127.0.0.1:9001:9001"   # web console (loopback only)
+    volumes:
+      - minio_data:/data
+
 volumes:
   pg_data:
+  minio_data:

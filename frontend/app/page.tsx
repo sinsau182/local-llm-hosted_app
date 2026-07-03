@@ -4,6 +4,7 @@ import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ComfyUIBox } from "@/components/comfyui-box";
 import { ModelLauncher } from "@/components/model-launcher";
 import { LiteLlmLaunchButton } from "@/components/litellm-launcher";
 import { LibreChatLaunchButton } from "@/components/librechat-launcher";
@@ -239,10 +240,7 @@ export default function HomePage() {
   const [messages, setMessages] = useState<ChatMessage[]>(welcomeMessages);
   const [routedModel, setRoutedModel] = useState<string>("");
   const [isChatLoading, setIsChatLoading] = useState(false);
-  const [mediaType, setMediaType] = useState<"image" | "video">("image");
-  const [mediaPrompt, setMediaPrompt] = useState("Generate a cinematic product hero image with teal lighting.");
   const [model, setModel] = useState("auto");
-  const [mediaJob, setMediaJob] = useState("");
   const [apiError, setApiError] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const hasLoadedStoredMessages = useRef(false);
@@ -384,17 +382,6 @@ export default function HomePage() {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       void submitChat();
-    }
-  }
-
-  async function submitMedia() {
-    setApiError("");
-
-    try {
-      const response = await apiClient.submitMedia({ prompt: mediaPrompt, media_type: mediaType, model });
-      setMediaJob(response.job_id);
-    } catch (error) {
-      setFriendlyError(error);
     }
   }
 
@@ -565,35 +552,7 @@ export default function HomePage() {
           </div>
         </section> */}
 
-        <section className="rounded-2xl border border-ink/10 bg-white p-5 shadow-sm">
-          <p className="text-xs font-semibold uppercase text-cyan-700">Media queue</p>
-          <h2 className="font-display text-xl font-semibold">Generate asset</h2>
-          <div className="mt-4 space-y-3 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              {(["image", "video"] as const).map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  className={`rounded-lg border px-3 py-2 capitalize transition ${
-                    mediaType === type ? "border-cyan-600 bg-cyan-50 text-cyan-800" : "border-ink/10 bg-white"
-                  }`}
-                  onClick={() => setMediaType(type)}
-                >
-                  {type}
-                </button>
-              ))}
-            </div>
-            <textarea
-              className="min-h-28 w-full resize-none rounded-lg border border-ink/15 bg-white px-3 py-2 outline-none transition focus:border-cyan-600 focus:ring-2 focus:ring-cyan-100"
-              value={mediaPrompt}
-              onChange={(event) => setMediaPrompt(event.target.value)}
-            />
-            <Button className="w-full" type="button" onClick={() => void submitMedia()}>
-              Queue job
-            </Button>
-            {mediaJob ? <p className="break-all rounded-lg bg-zinc-50 px-3 py-2 text-xs text-ink/70">Job queued: {mediaJob}</p> : null}
-          </div>
-        </section>
+        <ComfyUIBox />
       </aside>
     </section>
   );

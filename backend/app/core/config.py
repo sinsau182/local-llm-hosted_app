@@ -28,6 +28,25 @@ class Settings(BaseSettings):
     max_storage_bytes: int = 322122547200
     max_request_timeout_seconds: int = 600
 
+    # ── Object storage (MinIO / S3) for generated media ──────────────────────
+    # Assets generated in ComfyUI are ingested into this bucket; metadata rows
+    # go into Postgres (jobs/artifacts). The API streams objects back so MinIO
+    # can stay on the internal network (no public endpoint / presigned host).
+    minio_endpoint: str = "http://minio:9000"
+    minio_access_key: str = "platform"
+    minio_secret_key: str = "platform_secret"
+    minio_bucket: str = "platform-media"
+    minio_region: str = "us-east-1"
+
+    # ── ComfyUI output ingestion ─────────────────────────────────────────────
+    # ComfyUI's output dir (mounted read-only into the ingester). The Create
+    # panel tags each output's filename_prefix as ``user/<uid>/…`` so the
+    # ingester can attribute assets to a user. Unknown/anonymous ids map to the
+    # default user below.
+    comfyui_output_dir: str = "/data/comfyui/output"
+    ingest_poll_seconds: float = 10.0
+    ingest_default_user_id: str = "00000000-0000-0000-0000-000000000001"
+
     # ComfyUI (image generation)
     comfyui_url: str = "http://localhost:8188"
     comfyui_checkpoint: str = "flux1-schnell-fp8.safetensors"

@@ -43,6 +43,13 @@ export type AppConfig = {
     dashboardTab: boolean;
   };
   /**
+   * Base URL of the simplified ComfyUI surface users are sent to for image /
+   * video creation. Source of truth: NEXT_PUBLIC_COMFYUI_URL in the root master
+   * `.env` (baked in at build time). The redirect box appends `?user=<uid>` so
+   * ComfyUI can attribute generated assets to the signed-in user.
+   */
+  comfyuiUrl: string;
+  /**
    * Local model runners. Used by the chat page sidebar AND the launcher view
    * shown when `features.chatPage` is turned off.
    */
@@ -70,6 +77,12 @@ export const appConfig: AppConfig = {
     // false hides the Dashboard tab from the header nav (and 404s the route).
     dashboardTab: envFlag(process.env.NEXT_PUBLIC_FEATURE_DASHBOARD_TAB, false),
   },
+  // Simplified ComfyUI surface for image/video creation (Caddy :8443 route by
+  // default). Override with NEXT_PUBLIC_COMFYUI_URL in the root master .env.
+  // Empty/unset falls back to the default (mirrors envFlag()).
+  comfyuiUrl:
+    process.env.NEXT_PUBLIC_COMFYUI_URL ||
+    "https://breachlabz-nucbox-evo-x2.tailcf3262.ts.net:8443",
   // Native UIs are published through the single breachlabz domain (Caddy):
   //  - llama.cpp UIs are path-proxied under /models/* (relative assets + API).
   //  - LiteLLM UI is on its own TLS port (NEXT_PUBLIC_LITELLM_URL) so its /v1

@@ -1,6 +1,7 @@
 import type { QwenModel } from "@/config/app-config";
 import { LiteLlmLaunchButton } from "@/components/litellm-launcher";
 import { LibreChatLaunchButton } from "@/components/librechat-launcher";
+import { ComfyUIBox } from "@/components/comfyui-box";
 
 const cardClass =
   "group flex flex-col gap-2 rounded-2xl border border-ink/10 bg-white p-5 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-600 hover:shadow-md";
@@ -34,6 +35,8 @@ export function ModelLauncher({ models }: { models: QwenModel[] }) {
           chat UI on the port serving that model.
         </p>
       </div>
+
+      <ComfyUIBox />
 
       <div className="grid gap-4 sm:grid-cols-2">
         {models.map((model) =>

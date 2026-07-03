@@ -509,6 +509,42 @@ class InferenceService:
                 pass
         return response
 
+    def cancel_job(self, job_id: str) -> JobStatusResponse:
+        """Cancel a job a client abandoned (e.g. the page reloaded while
+        generating). If it is still QUEUED it is pulled from the FIFO; if it is the
+        one currently executing, ComfyUI is interrupted so the serial worker frees
+        the slot. Idempotent — a job already in a terminal state is returned as-is."""
+        job = self._load_job(job_id)
+        if job is None:
+            return JobStatusResponse(job_id=job_id, status="NOT_FOUND")
+        if str(job.get("status")) in ("COMPLETED", "FAILED", "CANCELLED"):
+            return self.get_job(job_id)
+
+        was_active = False
+        try:
+            was_active = self.queue.active() == job_id
+            self.queue.remove(job_id)
+        except redis.RedisError:
+            pass
+        if was_active:
+            # Stop the in-flight run; the worker then records a terminal state and
+            # moves on. (It may finalize as FAILED rather than CANCELLED — harmless,
+            # the abandoned client never sees it; the point is to free the worker.)
+            try:
+                self._comfy_post("/interrupt", {})
+            except (error.URLError, error.HTTPError, TimeoutError, ValueError):
+                pass
+
+        job["status"] = "CANCELLED"
+        job["error"] = "Cancelled by client"
+        job["updated_at"] = self._timestamp()
+        self._save_job(job)
+        return JobStatusResponse(
+            job_id=job_id, status="CANCELLED",
+            media_type=str(job.get("media_type", "")), prompt=str(job.get("prompt", "")),
+            error=job.get("error"),
+        )
+
     def embed(self, payload: EmbedRequest) -> EmbedResponse:
         inputs = payload.input if isinstance(payload.input, list) else [payload.input]
         response = self._request_json(

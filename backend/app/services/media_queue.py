@@ -108,6 +108,17 @@ class MediaQueue:
     def clear_active(self) -> None:
         self._r.delete(K_ACTIVE)
 
+    def active(self) -> str | None:
+        return self._r.get(K_ACTIVE)
+
+    def remove(self, job_id: str) -> bool:
+        """Drop a still-queued job from whichever FIFO holds it (used to cancel a
+        job a client abandoned). Returns True if it was present. No-op if the job
+        has already been claimed by the worker."""
+        removed = self._r.lrem(Q_VIDEO, 0, job_id) + self._r.lrem(Q_IMAGE, 0, job_id)
+        self.publish_video_pending()
+        return removed > 0
+
     # ── orchestration state (read-only here; written by model_loader.py) ──────
     def mode(self) -> str:
         return self._r.get(K_MODE) or "normal"

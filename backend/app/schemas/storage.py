@@ -12,6 +12,10 @@ class Artifact(BaseModel):
     media_type: str
     file_path: str
     size_bytes: int
+    # API path that streams the object from the media bucket. The frontend
+    # prepends the API base URL to preview/download the asset.
+    url: str | None = None
+    created_at: str | None = None
 
 
 class ArtifactListResponse(BaseModel):

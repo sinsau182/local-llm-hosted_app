@@ -124,6 +124,15 @@ export const apiClient = {
   getJob(jobId: string): Promise<JobStatusResponse> {
     return request<JobStatusResponse>(`/backend/v1/inference/jobs/${jobId}`);
   },
+  // Best-effort cancel that survives page unload — sendBeacon queues the POST in
+  // the browser so an abandoned generation is dropped instead of clogging the
+  // serial queue. Returns false if beacons aren't available (caller can ignore).
+  cancelJobBeacon(jobId: string): boolean {
+    if (typeof navigator === "undefined" || typeof navigator.sendBeacon !== "function") {
+      return false;
+    }
+    return navigator.sendBeacon(`${API_BASE_URL}/backend/v1/inference/jobs/${jobId}/cancel`);
+  },
   getModels(): Promise<ModelsResponse> {
     return request<ModelsResponse>("/backend/v1/inference/models");
   },

@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </Link>
               <nav className="flex items-center gap-4 text-sm text-ink/70">
                 <Link href="/">Chat</Link>
-                <Link href="/generate">Generate</Link>
+                <Link href="/storage">Media</Link>
                 {appConfig.features.dashboardTab && (
                   <Link href="/dashboard">Dashboard</Link>
                 )}

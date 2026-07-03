@@ -38,6 +38,13 @@ async def get_job(job_id: str) -> JobStatusResponse:
     return service.get_job(job_id)
 
 
+@router.post("/jobs/{job_id}/cancel", response_model=JobStatusResponse)
+async def cancel_job(job_id: str) -> JobStatusResponse:
+    """Cancel an abandoned job (the frontend beacons this on page unload so a
+    reloaded generation doesn't keep clogging the serial queue)."""
+    return service.cancel_job(job_id)
+
+
 @router.get("/models", response_model=ModelsResponse)
 async def models() -> ModelsResponse:
     return service.list_models()

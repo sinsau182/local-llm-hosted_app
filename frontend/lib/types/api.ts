@@ -95,6 +95,9 @@ export type Artifact = {
   media_type: string;
   file_path: string;
   size_bytes: number;
+  /** API path that streams the object from the media bucket. */
+  url?: string | null;
+  created_at?: string | null;
 };
 
 export type ArtifactListResponse = {

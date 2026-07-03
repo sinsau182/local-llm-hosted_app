@@ -33,3 +33,11 @@ CREATE TABLE IF NOT EXISTS artifacts (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_user_status ON jobs(user_id, status);
 CREATE INDEX IF NOT EXISTS idx_artifacts_user_created ON artifacts(user_id, created_at DESC);
+-- Dedupe key for the ComfyUI ingester (file_path == bucket object key).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_artifacts_file_path ON artifacts(file_path);
+
+-- Default user that unattributed / anonymous ComfyUI outputs are assigned to.
+-- (The ingester also ensures this row at runtime for existing databases.)
+INSERT INTO users (id, email, full_name, role)
+VALUES ('00000000-0000-0000-0000-000000000001', 'anonymous@local', 'Anonymous', 'user')
+ON CONFLICT (id) DO NOTHING;
