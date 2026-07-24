@@ -104,6 +104,23 @@ export type ArtifactListResponse = {
   items: Artifact[];
 };
 
+export type SpeechFormat = "mp3" | "wav" | "opus" | "flac" | "aac" | "pcm";
+
+export type SpeechRequest = {
+  input: string;
+  voice?: string;
+  model?: string;
+  response_format?: SpeechFormat | "";
+  speed?: number;
+};
+
+export type TranscriptionResponse = {
+  text: string;
+  model?: string;
+  language?: string | null;
+  duration?: number | null;
+};
+
 export type EmbedRequest = {
   input: string | string[];
 };

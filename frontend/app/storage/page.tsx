@@ -9,7 +9,7 @@ import type { Artifact } from "@/lib/types/api";
 import { useSessionStore } from "@/lib/store/session";
 
 // Same base the API client uses; content URLs from the API are relative paths.
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://breachlabz-nucbox-evo-x2.tailcf3262.ts.net";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://breachlabz-nucbox-evo-x2.tail040b45.ts.net";
 const assetUrl = (file: Artifact) => (file.url ? `${API_BASE_URL}${file.url}` : "");
 
 export default function StoragePage() {

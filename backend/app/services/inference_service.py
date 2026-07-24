@@ -26,6 +26,8 @@ from app.schemas.inference import (
     MediaSubmitResponse,
     ModelInfo,
     ModelsResponse,
+    SpeechRequest,
+    TranscriptionResponse,
 )
 
 logger = logging.getLogger("inference_service")
@@ -183,6 +185,81 @@ class InferenceService:
             output=output,
             routed_model=routed_model,
         )
+
+    # ─── Audio: Whisper (STT) + Kokoro (TTS) sidecars ───────────────────────
+    # CPU-only, always-on sidecars that speak the OpenAI audio API. Served
+    # synchronously (no media queue) since they never contend for the iGPU.
+    _AUDIO_MIME: dict[str, str] = {
+        "mp3": "audio/mpeg", "wav": "audio/wav", "opus": "audio/opus",
+        "flac": "audio/flac", "aac": "audio/aac", "pcm": "audio/pcm",
+    }
+
+    def synthesize_speech(self, payload: SpeechRequest) -> tuple[bytes, str]:
+        """Kokoro TTS. Proxies to the sidecar's OpenAI /v1/audio/speech and
+        returns the raw audio bytes plus their MIME type."""
+        fmt = payload.response_format or settings.kokoro_format
+        body = json.dumps({
+            "model": payload.model or settings.kokoro_model,
+            "input": payload.input,
+            "voice": payload.voice or settings.kokoro_voice,
+            "response_format": fmt,
+            "speed": payload.speed,
+        }).encode("utf-8")
+        req = request.Request(
+            f"{settings.kokoro_url.rstrip('/')}/v1/audio/speech",
+            data=body,
+            headers={"Content-Type": "application/json", "Accept": "audio/*"},
+            method="POST",
+        )
+        with request.urlopen(req, timeout=settings.audio_timeout_seconds) as response:
+            audio = response.read()
+        return audio, self._AUDIO_MIME.get(fmt, "application/octet-stream")
+
+    def transcribe(
+        self, data: bytes, filename: str, content_type: str,
+        model: str = "", language: str = "",
+    ) -> TranscriptionResponse:
+        """Whisper STT. Forwards the uploaded audio to the sidecar's OpenAI
+        /v1/audio/transcriptions (multipart) and returns the recognized text."""
+        resolved_model = model or settings.whisper_model
+        boundary = f"----platform{uuid4().hex}"
+        fields = {"model": resolved_model, "response_format": "json"}
+        if language:
+            fields["language"] = language
+        req = request.Request(
+            f"{settings.whisper_url.rstrip('/')}/v1/audio/transcriptions",
+            data=self._encode_multipart(boundary, fields, filename, content_type, data),
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with request.urlopen(req, timeout=settings.audio_timeout_seconds) as response:
+            result = json.loads(response.read().decode("utf-8"))
+        return TranscriptionResponse(
+            text=str(result.get("text", "")).strip(),
+            model=resolved_model,
+            language=result.get("language"),
+            duration=result.get("duration"),
+        )
+
+    @staticmethod
+    def _encode_multipart(
+        boundary: str, fields: dict[str, str],
+        filename: str, content_type: str, data: bytes,
+    ) -> bytes:
+        """Build a multipart/form-data body for the Whisper audio upload."""
+        crlf = b"\r\n"
+        marker = f"--{boundary}".encode("utf-8")
+        buf = bytearray()
+        for name, value in fields.items():
+            buf += marker + crlf
+            buf += f'Content-Disposition: form-data; name="{name}"'.encode("utf-8") + crlf + crlf
+            buf += str(value).encode("utf-8") + crlf
+        buf += marker + crlf
+        buf += f'Content-Disposition: form-data; name="file"; filename="{filename}"'.encode("utf-8") + crlf
+        buf += f"Content-Type: {content_type or 'application/octet-stream'}".encode("utf-8") + crlf + crlf
+        buf += data + crlf
+        buf += marker + b"--" + crlf
+        return bytes(buf)
 
     # ─── ComfyUI integration ────────────────────────────────────────────────
     def _comfy_post(self, path: str, payload: dict[str, Any]) -> dict[str, Any]:

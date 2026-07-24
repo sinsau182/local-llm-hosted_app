@@ -53,6 +53,25 @@ class JobStatusResponse(BaseModel):
     eta_seconds: int = 0      # rough estimate until this job completes
 
 
+class SpeechRequest(BaseModel):
+    """Text-to-speech (Kokoro). Blank voice/model/format -> service defaults."""
+
+    input: str = Field(min_length=1, max_length=4000)
+    voice: str = ""
+    model: str = ""
+    response_format: Literal["mp3", "wav", "opus", "flac", "aac", "pcm", ""] = ""
+    speed: float = Field(default=1.0, ge=0.25, le=4.0)
+
+
+class TranscriptionResponse(BaseModel):
+    """Speech-to-text (Whisper) result."""
+
+    text: str
+    model: str = ""
+    language: str | None = None
+    duration: float | None = None
+
+
 class ModelInfo(BaseModel):
     name: str
     precision: str

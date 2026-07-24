@@ -12,7 +12,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-        "https://breachlabz-nucbox-evo-x2.tailcf3262.ts.net",
+        "https://breachlabz-nucbox-evo-x2.tail040b45.ts.net",
     ],
     allow_credentials=True,
     allow_methods=["*"],

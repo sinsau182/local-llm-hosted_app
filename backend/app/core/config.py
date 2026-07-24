@@ -90,6 +90,24 @@ class Settings(BaseSettings):
         "手指融合，静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"
     )
 
+    # ── Audio (STT/TTS sidecars — CPU, always-on, §5) ────────────────────────
+    # Whisper (speech-to-text) and Kokoro (text-to-speech) run as CPU-only
+    # sidecars on the host (launched by ai-server/model_loader.py), reached the
+    # same way as llama-server/ComfyUI (host.docker.internal). Both speak the
+    # OpenAI audio API, so the backend simply proxies uploads/text through to
+    # /v1/audio/transcriptions and /v1/audio/speech. Because they never touch
+    # the iGPU, audio is served synchronously — it does not use the media queue.
+    whisper_url: str = "http://localhost:9001"
+    kokoro_url: str = "http://localhost:9002"
+    audio_timeout_seconds: float = 120.0
+    # Model id each sidecar advertises (sent through as the OpenAI `model` field).
+    whisper_model: str = "whisper-large-v3"
+    kokoro_model: str = "kokoro"
+    # Kokoro defaults. `voice` is one of its built-in voices; `format` is the
+    # audio container the sidecar encodes (mp3/wav/opus/flac/aac/pcm).
+    kokoro_voice: str = "af_heart"
+    kokoro_format: str = "mp3"
+
     # Media queue worker (§5/§9). One worker drains the Redis FIFO serially.
     media_poll_seconds: float = 2.0           # how often to poll ComfyUI /history
     media_worker_idle_seconds: float = 2.0    # sleep when the queue is empty
@@ -104,6 +122,7 @@ class Settings(BaseSettings):
     # Feature toggles — source of truth is the root master .env (FEATURE_*).
     feature_media_queue: bool = True
     feature_doc_rag: bool = True
+    feature_audio: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

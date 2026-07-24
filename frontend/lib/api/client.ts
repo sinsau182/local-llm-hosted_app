@@ -15,12 +15,14 @@ import type {
   QuotaResponse,
   SearchRequest,
   SearchResponse,
+  SpeechRequest,
   TokenResponse,
+  TranscriptionResponse,
   UserProfileResponse,
   VramResponse,
 } from "@/lib/types/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://breachlabz-nucbox-evo-x2.tailcf3262.ts.net";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "https://breachlabz-nucbox-evo-x2.tail040b45.ts.net";
 
 type RequestOptions = RequestInit & {
   xUserEmail?: string;
@@ -135,6 +137,39 @@ export const apiClient = {
   },
   getModels(): Promise<ModelsResponse> {
     return request<ModelsResponse>("/backend/v1/inference/models");
+  },
+  // Kokoro TTS — returns the raw audio as a Blob (the backend streams bytes,
+  // not JSON), so this bypasses the JSON `request` helper.
+  async synthesizeSpeech(payload: SpeechRequest): Promise<Blob> {
+    const response = await fetch(`${API_BASE_URL}/backend/v1/inference/audio/speech`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const errorMessage = await readErrorMessage(response);
+      throw new ApiError(response.status, errorMessage ?? `Speech synthesis failed (${response.status})`);
+    }
+    return response.blob();
+  },
+  // Whisper STT — multipart upload of an audio file. FormData sets its own
+  // Content-Type boundary, so this also bypasses the JSON `request` helper.
+  async transcribe(file: Blob, options?: { filename?: string; model?: string; language?: string }): Promise<TranscriptionResponse> {
+    const form = new FormData();
+    form.append("file", file, options?.filename ?? "recording.webm");
+    if (options?.model) form.append("model", options.model);
+    if (options?.language) form.append("language", options.language);
+    const response = await fetch(`${API_BASE_URL}/backend/v1/inference/audio/transcriptions`, {
+      method: "POST",
+      body: form,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      const errorMessage = await readErrorMessage(response);
+      throw new ApiError(response.status, errorMessage ?? `Transcription failed (${response.status})`);
+    }
+    return (await response.json()) as TranscriptionResponse;
   },
   embed(payload: EmbedRequest): Promise<EmbedResponse> {
     return request<EmbedResponse>("/backend/v1/inference/embed", {

@@ -16,6 +16,10 @@ services:
       - LLAMA_URL=http://host.docker.internal:4001
       - LLAMA_TIMEOUT_SECONDS=600
       - COMFYUI_URL=http://host.docker.internal:8188
+      # Audio sidecars (CPU, always-on) — Whisper STT + Kokoro TTS. Reached on
+      # the host like llama-server/ComfyUI; both speak the OpenAI audio API.
+      - WHISPER_URL=http://host.docker.internal:9001
+      - KOKORO_URL=http://host.docker.internal:9002
       - LITELLM_API_KEY=sk-f4fe27901e83c3ebf669625d9b291d27dc4908b2a671bb91f3bdda42e905d2b3
       - CHROMADB_HOST=host.docker.internal
       - CHROMADB_PORT=8010
@@ -101,6 +105,8 @@ services:
       args:
         NEXT_PUBLIC_FEATURE_CHAT_PAGE: ${NEXT_PUBLIC_FEATURE_CHAT_PAGE:-false}
         NEXT_PUBLIC_FEATURE_DASHBOARD_TAB: ${NEXT_PUBLIC_FEATURE_DASHBOARD_TAB:-false}
+        NEXT_PUBLIC_FEATURE_AUDIO_PAGE: ${NEXT_PUBLIC_FEATURE_AUDIO_PAGE:-true}
+        NEXT_PUBLIC_FEATURE_LIBRECHAT: ${NEXT_PUBLIC_FEATURE_LIBRECHAT:-true}
         NEXT_PUBLIC_COMFYUI_URL: ${NEXT_PUBLIC_COMFYUI_URL:-}
     container_name: platform-frontend
     restart: unless-stopped
